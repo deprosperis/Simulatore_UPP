@@ -1,0 +1,10 @@
+# File di sistema operativi
+.DS_Store
+Thumbs.db
+
+# Cartelle e configurazioni degli editor di codice (es. VS Code)
+.vscode/
+.idea/
+
+# File temporanei o di log
+*.log

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulatore Concorso UPP</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        [v-cloak] { display: none; }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans antialiased text-gray-900">
+
+    <div id="app" v-cloak class="min-h-screen flex flex-col">
+        
+        <header class="bg-gradient-to-r from-blue-700 to-indigo-800 text-white shadow-md py-4 px-6 flex justify-between items-center">
+            <div>
+                <h1 class="text-xl font-bold tracking-wide">Simulatore Concorso UPP</h1>
+                <p class="text-xs text-blue-200">Esercitazione intensiva con memoria di progresso</p>
+            </div>
+            
+            <div class="flex items-center space-x-6">
+                <div v-if="fileCaricato && currentQuestion" class="text-right border-r border-blue-500/40 pr-6">
+                    <span class="block text-xs text-blue-200 uppercase tracking-wider">Tempo Rimanente</span>
+                    <span class="text-xl font-mono font-bold" 
+                          :class="tempoRimanente < 300 ? 'text-red-400 animate-pulse' : 'text-green-300'">
+                        {{ tempoFormattato }}
+                    </span>
+                </div>
+                <div class="text-right">
+                    <span class="block text-xs text-blue-200 uppercase tracking-wider">Punteggio Blocco</span>
+                    <span class="text-xl font-mono font-bold text-yellow-300">{{ punteggio.toFixed(2) }} / {{ totaleDomandeRisposte }}</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-1 max-w-4xl w-full mx-auto p-4 md:p-6">
+            
+            <div v-if="!fileCaricato" class="bg-white rounded-xl shadow-md p-8 text-center border border-gray-200 max-w-xl mx-auto mt-10">
+                <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <h2 class="text-2xl font-bold mb-2 text-gray-800">Inizia l'esercitazione</h2>
+                <p class="text-gray-600 mb-6 text-sm">Il sistema distribuisce i quiz in blocchi progressivi da 30 domande (90 minuti a sessione) per completare l'intera banca dati senza ripetizioni.</p>
+                
+                <div class="space-y-4">
+                    <button v-if="sessioneSalvataDisponibile" @click="riprendiSessioneSalvata" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded-lg transition-all shadow-sm cursor-pointer flex items-center justify-center space-x-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 15l-3-3m0 0l3-3m-3 3h8M3 12a9 9 0 1118 0a9 9 0 01-18 0z"></path></svg>
+                        <span>Riprendi Sessione Precedente (Avanzamento: {{ infoAvanzamentoSalvato }} / 297)</span>
+                    </button>
+
+                    <button @click="caricaDatabaseAutomatico" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-all shadow-sm cursor-pointer">
+                        {{ sessioneSalvataDisponibile ? 'Inizia Nuova Simulazione (Azzera Progressi)' : 'Carica Quiz e Inizia' }}
+                    </button>
+                </div>
+                
+                <div v-if="erroreCaricamento" class="mt-4 p-3 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm text-left">
+                    {{ erroreCaricamento }}
+                </div>
+            </div>
+
+            <div v-else-if="currentQuestion" class="space-y-6">
+                
+                <!-- Barra di progresso -->
+                <div class="w-full bg-gray-200 rounded-full h-2">
+                    <div class="bg-blue-600 h-2 rounded-full transition-all duration-500" :style="{ width: ((indiceDomandaAttuale + (rispostaData !== null ? 1 : 0)) / domande.length * 100) + '%' }"></div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm p-4 flex flex-wrap justify-between items-center gap-4 border border-gray-100">
+                    <div class="flex items-center space-x-3">
+                        <span class="bg-blue-100 text-blue-800 font-bold px-3 py-1 rounded-full text-xs">
+                            Quesito N. {{ currentQuestion.numeroOriginale }}
+                        </span>
+                        <span class="text-sm text-gray-600 font-medium">
+                            Quiz corrente: {{ indiceDomandaAttuale + 1 }} di {{ domande.length }}
+                        </span>
+                    </div>
+                    <div class="text-sm text-indigo-700 font-semibold bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-100">
+                        Avanzamento totale banca dati: {{ indicePool + indiceDomandaAttuale + 1 }} / {{ poolDomande.length }}
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-md border border-gray-200/60 p-6 md:p-8">
+                    <div class="text-lg text-gray-800 font-medium mb-6 leading-relaxed">
+                        {{ currentQuestion.testo }}
+                    </div>
+
+                    <div class="space-y-4 mb-6">
+                        <button 
+                            v-for="(opt, index) in currentQuestion.options" 
+                            :key="index"
+                            @click="selezionaRisposta(opt)"
+                            :disabled="rispostaData !== null"
+                            class="w-full text-left p-4 rounded-xl border transition-all duration-200 text-gray-700 font-medium flex items-start space-x-3 group cursor-pointer"
+                            :class="calcolaClasseOpzione(opt)"
+                        >
+                            <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold shrink-0 mt-0.5"
+                                  :class="calcolaClasseBadgeOpzione(opt, index)">
+                                {{ String.fromCharCode(65 + index) }}
+                            </span>
+                            <span class="flex-1">{{ opt.text }}</span>
+                        </button>
+
+                        <button 
+                            v-if="rispostaData === null"
+                            @click="saltaDomanda"
+                            class="w-full text-center p-3 rounded-xl border border-gray-300 hover:bg-gray-100 transition-all duration-200 text-gray-500 font-medium cursor-pointer"
+                        >
+                            Salta Quesito (0 punti)
+                        </button>
+                    </div>
+
+                    <div v-if="rispostaData !== null" class="mt-6 pt-6 border-t border-gray-100 flex justify-between items-center">
+                        <div>
+                            <span v-if="rispostaData.isCorrect" class="text-emerald-700 font-bold flex items-center gap-1.5 text-sm bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
+                                Risposta Esatta! (+1.00 punti)
+                            </span>
+                            <span v-else-if="rispostaData.isSkipped" class="text-gray-700 font-bold flex items-center gap-1.5 text-sm bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
+                                Quesito Saltato (0 punti)
+                            </span>
+                            <span v-else class="text-red-700 font-bold flex items-center gap-1.5 text-sm bg-red-50 px-3 py-1.5 rounded-lg border border-red-200">
+                                Errato (-0.33 punti)
+                            </span>
+                        </div>
+                        
+                        <button @click="prossimaDomanda" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-5 rounded-lg transition-all flex items-center space-x-1.5 shadow-sm text-sm cursor-pointer">
+                            <span>{{ indiceDomandaAttuale + 1 === domande.length ? 'Visualizza Riepilogo' : 'Prossimo Quesito' }}</span>
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
+            <div v-else class="bg-white rounded-2xl shadow-md border border-gray-200 p-8 text-center max-w-xl mx-auto mt-6">
+                <div class="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg v-if="tempoRimanente > 0" class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <svg v-else class="w-8 h-8 text-red-600 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                </div>
+                
+                <h2 class="text-3xl font-extrabold mb-2" :class="tempoRimanente > 0 ? 'text-gray-800' : 'text-red-600'">
+                    {{ tempoRimanente > 0 ? 'Blocco Completato!' : 'Tempo Scaduto!' }}
+                </h2>
+                <p class="text-gray-500 mb-6">
+                    {{ tempoRimanente > 0 ? 'Ottimo lavoro, sessione completata con successo.' : 'I 90 minuti sono terminati. Ecco il resoconto del blocco attuale:' }}
+                </p>
+                
+                <div class="bg-gray-50 border border-gray-100 rounded-xl p-5 mb-6 flex justify-around">
+                    <div class="text-center">
+                        <span class="block text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Punteggio Blocco</span>
+                        <span class="text-3xl font-mono font-extrabold text-indigo-600">{{ punteggio.toFixed(2) }}</span>
+                    </div>
+                    <div class="border-r border-gray-200"></div>
+                    <div class="text-center">
+                        <span class="block text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Quiz Esauriti</span>
+                        <span class="text-3xl font-mono font-extrabold text-emerald-600">{{ indicePool + domande.length }} / {{ poolDomande.length }}</span>
+                    </div>
+                </div>
+
+                <button @click="gestisciProssimaSessione" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-lg transition-all shadow-sm cursor-pointer">
+                    {{ haAltreDomande ? 'Continua con le prossime 30 domande' : 'Banca dati completata! Rimescola e ricomincia' }}
+                </button>
+            </div>
+
+        </main>
+
+        <footer class="bg-white border-t border-gray-200 py-3 text-center text-xs text-gray-400 font-medium">
+            Sviluppato per lo studio del Concorso UPP &copy; 2026
+        </footer>
+
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    fileCaricato: false,
+                    erroreCaricamento: null,
+                    domande: [],               
+                    poolDomande: [],           
+                    indicePool: 0,             
+                    indiceDomandaAttuale: 0,
+                    currentQuestion: null,
+                    rispostaData: null,
+                    punteggio: 0,
+                    totaleDomandeRisposte: 0,
+                    risposteEsatte: 0,
+                    tempoRimanente: 5400,      
+                    timerInterval: null,
+                    
+                    // Stati per la persistenza locale
+                    sessioneSalvataDisponibile: false,
+                    infoAvanzamentoSalvato: 0
+                }
+            },
+            computed: {
+                haAltreDomande() {
+                    return this.indicePool + 30 < this.poolDomande.length;
+                },
+                tempoFormattato() {
+                    const minuti = Math.floor(this.tempoRimanente / 60);
+                    const secondi = this.tempoRimanente % 60;
+                    return `${minuti.toString().padStart(2, '0')}:${secondi.toString().padStart(2, '0')}`;
+                }
+            },
+            mounted() {
+                // All'avvio controlla subito se nel browser dell'utente c'è un progresso registrato
+                this.controllaSessioneSalvata();
+            },
+            methods: {
+                controllaSessioneSalvata() {
+                    const savedPool = localStorage.getItem('upp_poolDomande');
+                    const savedIndice = localStorage.getItem('upp_indicePool');
+                    if (savedPool && savedIndice !== null) {
+                        this.sessioneSalvataDisponibile = true;
+                        this.infoAvanzamentoSalvato = parseInt(savedIndice);
+                    }
+                },
+                
+                // Salva lo stato completo nel browser ad ogni azione sensibile
+                salvaStatoNelBrowser() {
+                    localStorage.setItem('upp_poolDomande', JSON.stringify(this.poolDomande));
+                    localStorage.setItem('upp_indicePool', this.indicePool.toString());
+                    localStorage.setItem('upp_indiceDomandaAttuale', this.indiceDomandaAttuale.toString());
+                    localStorage.setItem('upp_punteggio', this.punteggio.toString());
+                    localStorage.setItem('upp_totaleDomandeRisposte', this.totaleDomandeRisposte.toString());
+                    localStorage.setItem('upp_risposteEsatte', this.risposteEsatte.toString());
+                    localStorage.setItem('upp_tempoRimanente', this.tempoRimanente.toString());
+                },
+
+                // Pulisce la memoria in caso di completamento dell'intero percorso o reset volontario
+                cancellaStatoDalBrowser() {
+                    localStorage.removeItem('upp_poolDomande');
+                    localStorage.removeItem('upp_indicePool');
+                    localStorage.removeItem('upp_indiceDomandaAttuale');
+                    localStorage.removeItem('upp_punteggio');
+                    localStorage.removeItem('upp_totaleDomandeRisposte');
+                    localStorage.removeItem('upp_risposteEsatte');
+                    localStorage.removeItem('upp_tempoRimanente');
+                    this.sessioneSalvataDisponibile = false;
+                },
+
+                riprendiSessioneSalvata() {
+                    try {
+                        this.poolDomande = JSON.parse(localStorage.getItem('upp_poolDomande'));
+                        this.indicePool = parseInt(localStorage.getItem('upp_indicePool'));
+                        this.indiceDomandaAttuale = parseInt(localStorage.getItem('upp_indiceDomandaAttuale'));
+                        this.punteggio = parseFloat(localStorage.getItem('upp_punteggio'));
+                        this.totaleDomandeRisposte = parseInt(localStorage.getItem('upp_totaleDomandeRisposte'));
+                        this.risposteEsatte = parseInt(localStorage.getItem('upp_risposteEsatte'));
+                        this.tempoRimanente = parseInt(localStorage.getItem('upp_tempoRimanente'));
+                        
+                        this.domande = this.poolDomande.slice(this.indicePool, this.indicePool + 30);
+                        this.fileCaricato = true;
+                        
+                        this.avviaTimer(true); // Riprende il timer dai secondi rimanenti stoccati
+                        this.currentQuestion = this.domande[this.indiceDomandaAttuale];
+                        this.rispostaData = null;
+                    } catch (e) {
+                        this.erroreCaricamento = "Impossibile ripristinare la sessione vecchia. Avviane una nuova.";
+                        this.cancellaStatoDalBrowser();
+                    }
+                },
+
+                async caricaDatabaseAutomatico() {
+                    this.cancellaStatoDalBrowser(); // Tabula rasa in caso di avvio da zero
+                    this.erroreCaricamento = null;
+                    try {
+                        const response = await fetch('banca_dati.json');
+                        const data = await response.json();
+                        
+                        let tutte = data.map(q => {
+                            let m_options = [
+                                { text: q.risposta_esatta || '', isCorrect: true },
+                                { text: q.opzione_errata_1 || '', isCorrect: false },
+                                { text: q.opzione_errata_2 || '', isCorrect: false }
+                            ].filter(o => o.text !== '');
+
+                            m_options.sort(() => Math.random() - 0.5);
+
+                            return {
+                                numeroOriginale: q.numero || q.id || '',
+                                testo: q.domanda || '',
+                                options: m_options
+                            };
+                        });
+
+                        this.poolDomande = tutte.sort(() => Math.random() - 0.5);
+                        this.fileCaricato = true;
+                        this.indicePool = 0;
+                        
+                        this.caricaBloccoSessione();
+                    } catch (err) {
+                        this.erroreCaricamento = "Errore nel caricamento della banca dati.";
+                    }
+                },
+
+                caricaBloccoSessione() {
+                    this.domande = this.poolDomande.slice(this.indicePool, this.indicePool + 30);
+                    this.indiceDomandaAttuale = 0;
+                    this.punteggio = 0;
+                    this.totaleDomandeRisposte = 0;
+                    this.risposteEsatte = 0;
+                    
+                    this.avviaTimer(false); // Timer pulito da 90 minuti
+                    this.caricaDomandaAttuale();
+                },
+
+                caricaDomandaAttuale() {
+                    if (this.indiceDomandaAttuale < this.domande.length) {
+                        this.currentQuestion = this.domande[this.indiceDomandaAttuale];
+                        this.rispostaData = null;
+                        this.salvaStatoNelBrowser(); // Salva la posizione esatta corrente
+                    } else {
+                        this.currentQuestion = null;
+                        this.fermaTimer();
+                    }
+                },
+
+                avviaTimer(usaResiduo) {
+                    this.fermaTimer();
+                    if (!usaResiduo) {
+                        this.tempoRimanente = 90 * 60;
+                    }
+                    this.timerInterval = setInterval(() => {
+                        if (this.tempoRimanente > 0) {
+                            this.tempoRimanente--;
+                            // Salva lo scorrere dei secondi per evitare trucchi di ricarica pagina
+                            if (this.tempoRimanente % 5 === 0) {
+                                localStorage.setItem('upp_tempoRimanente', this.tempoRimanente.toString());
+                            }
+                        } else {
+                            this.fermaTimer();
+                            this.currentQuestion = null;
+                        }
+                    }, 1000);
+                },
+
+                fermaTimer() {
+                    if (this.timerInterval) {
+                        clearInterval(this.timerInterval);
+                        this.timerInterval = null;
+                    }
+                },
+
+                selezionaRisposta(opzione) {
+                    if (this.rispostaData !== null) return;
+                    this.rispostaData = opzione;
+                    this.totaleDomandeRisposte++;
+                    if (opzione.isCorrect) {
+                        this.punteggio += 1.00;
+                        this.risposteEsatte++;
+                    } else {
+                        this.punteggio -= 0.33;
+                    }
+                    this.salvaStatoNelBrowser();
+                },
+
+                saltaDomanda() {
+                    if (this.rispostaData !== null) return;
+                    this.rispostaData = { isSkipped: true };
+                    this.totaleDomandeRisposte++;
+                    this.salvaStatoNelBrowser();
+                },
+
+                prossimaDomanda() {
+                    this.indiceDomandaAttuale++;
+                    this.caricaDomandaAttuale();
+                },
+
+                gestisciProssimaSessione() {
+                    this.indicePool += 30;
+
+                    if (this.indicePool < this.poolDomande.length) {
+                        this.caricaBloccoSessione();
+                        this.salvaStatoNelBrowser();
+                    } else {
+                        // Coda esaurita del tutto (297 risposte fatte), pulisce e rimescola da zero
+                        this.cancellaStatoDalBrowser();
+                        this.poolDomande.sort(() => Math.random() - 0.5);
+                        this.indicePool = 0;
+                        this.caricaBloccoSessione();
+                    }
+                },
+
+                calcolaClasseOpzione(opt) {
+                    if (this.rispostaData === null) return "bg-white border-gray-200 hover:bg-blue-50";
+                    if (opt.isCorrect) return "bg-emerald-50 border-emerald-500 text-emerald-900 font-semibold";
+                    if (this.rispostaData === opt) return "bg-red-50 border-red-400 text-red-900";
+                    return "bg-gray-50 border-gray-100 text-gray-400 opacity-60";
+                },
+
+                calcolaClasseBadgeOpzione(opt, index) {
+                    if (this.rispostaData === null) return "bg-gray-100 text-gray-600";
+                    if (opt.isCorrect) return "bg-emerald-500 text-white";
+                    if (this.rispostaData === opt) return "bg-red-500 text-white";
+                    return "bg-gray-200 text-gray-400";
+                }
+            },
+            beforeUnmount() {
+                this.fermaTimer();
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
