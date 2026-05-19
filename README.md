@@ -78,3 +78,5 @@ Se desideri modificare i punti assegnati per le risposte esatte o la penalità p
    * Cerca `Errato (-0.33 punti)`
    
    E aggiorna il testo con i nuovi valori scelti.
+
+*Nota bene: dopo aver salvato le modifiche al file `index.html`, ricordati di ricaricare la pagina del browser (F5) per rendere effettivi i nuovi punteggi.*
